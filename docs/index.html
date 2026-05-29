@@ -17,13 +17,155 @@
     <title>wilovca_web</title>
     <link rel="manifest" href="manifest.json" />
 
-    
+    <style>
+      body, html, flt-glass-pane, * {
+      cursor: none !important;
+    }
+
+      #magic-cursor {
+        position: fixed;
+        top: 0;
+        left: 0;
+        /* Empezamos con el tamaño del círculo normal */
+        width: 32px;
+        height: 32px;
+        background-color: white;
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 9999;
+        mix-blend-mode: difference;
+
+        /* Aceleración por hardware absoluta */
+        contain: strict;
+        will-change: transform, width, height, border-radius;
+      }
+    </style>
   </head>
   <body>
     <div id="magic-cursor"></div>
 
-   
+    <script>
+      const cursor = document.getElementById("magic-cursor");
 
+      let mouseX = window.innerWidth / 2;
+      let mouseY = window.innerHeight / 2;
+      let isSnapped = false;
+      let isAnimating = true;
+
+      let cx = mouseX,
+        cy = mouseY;
+      let cw = 32,
+        ch = 32;
+      let cRadius = 16;
+
+      let tx = mouseX,
+        ty = mouseY;
+      let tw = 32,
+        th = 32;
+      let tRadius = 16;
+
+      // Base de velocidad (equivalente al 0.25 a 60fps)
+      const baseSpeed = 0.25;
+      let lastTime = performance.now();
+
+      function wakeUp() {
+        if (!isAnimating) {
+          isAnimating = true;
+          lastTime = performance.now(); // Reseteamos el reloj al despertar
+          requestAnimationFrame(renderLoop);
+        }
+      }
+
+      window.addEventListener(
+        "pointermove",
+        (e) => {
+          mouseX = e.clientX;
+          mouseY = e.clientY;
+
+          if (!isSnapped) {
+            tx = mouseX;
+            ty = mouseY;
+          }
+          wakeUp();
+        },
+        { passive: true, capture: true },
+      );
+
+      window.snapToElement = function (x, y, width, height, radius) {
+        isSnapped = true;
+        tx = x + width / 2;
+        ty = y + height / 2;
+        tw = width;
+        th = height;
+        tRadius = radius;
+        wakeUp();
+      };
+
+      window.releaseCursor = function () {
+        isSnapped = false;
+        tx = mouseX;
+        ty = mouseY;
+        tw = 32;
+        th = 32;
+        tRadius = 16;
+        wakeUp();
+      };
+
+      function renderLoop(currentTime) {
+        if (!isAnimating) return;
+
+        // 1. CALCULAMOS EL DELTA TIME (Milisegundos desde el último fotograma)
+        // Limitamos a 100ms para evitar saltos locos si el PC se congela por completo
+        let dt = Math.min(currentTime - lastTime, 100);
+        lastTime = currentTime;
+
+        // 2. FÍSICA INDEPENDIENTE DE LOS FOTOGRAMAS (Frame-Independent Lerp)
+        // Si el navegador baja los FPS a 1 (cuando quitas el foco), dt será enorme,
+        // y el lerpFactor será casi 1.0 (teletransportación instantánea = 0 lag).
+        // A 60fps, dt es ~16.6ms, y el lerpFactor será exactamente nuestro baseSpeed (0.25).
+        let lerpFactor = 1 - Math.pow(1 - baseSpeed, dt / 16.666);
+
+        let dx = tx - cx;
+        let dy = ty - cy;
+        let dw = tw - cw;
+        let dh = th - ch;
+        let dr = tRadius - cRadius;
+
+        // Auto-Sleep para no consumir recursos de Flutter cuando el ratón no se mueve
+        if (
+          Math.abs(dx) < 0.1 &&
+          Math.abs(dy) < 0.1 &&
+          Math.abs(dw) < 0.1 &&
+          Math.abs(dh) < 0.1 &&
+          Math.abs(dr) < 0.1
+        ) {
+          cx = tx;
+          cy = ty;
+          cw = tw;
+          ch = th;
+          cRadius = tRadius;
+          isAnimating = false;
+        } else {
+          // Aplicamos el movimiento usando el factor de tiempo
+          cx += dx * lerpFactor;
+          cy += dy * lerpFactor;
+          cw += dw * lerpFactor;
+          ch += dh * lerpFactor;
+          cRadius += dr * lerpFactor;
+        }
+
+        cursor.style.transform = `translate3d(${cx - cw / 2}px, ${cy - ch / 2}px, 0)`;
+        cursor.style.width = `${cw}px`;
+        cursor.style.height = `${ch}px`;
+        cursor.style.borderRadius = `${cRadius}px`;
+
+        if (isAnimating) {
+          requestAnimationFrame(renderLoop);
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    </script>
     <script src="flutter_bootstrap.js" async></script>
   </body>
 </html>
